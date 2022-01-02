@@ -3,7 +3,7 @@ SRC = $(wildcard *.c)
 OBJ = $(SRC:.c=.o)
 
 CFLAGS += -g -std=gnu99 -O2 -W -Wall -Wextra
-LDFLAGS += -lftdi1
+LDFLAGS += -lftdi1 -lpthread
 
 all: $(EXEC)
 

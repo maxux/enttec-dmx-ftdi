@@ -3,7 +3,12 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <libftdi1/ftdi.h>
+#include <pthread.h>
+
+#define DMX_UNIX_SOCKET "/tmp/dmx.sock"
 
 #define USB_VENDOR_ID   0x0403  // FTDI USB Vendor
 #define USB_PRODUCT_ID  0x6001  // FTDI USB Product
@@ -24,6 +29,10 @@ typedef struct dmx_t {
     int stop;
     int parity;
     int baudrate;
+
+    pthread_t worker;
+    pthread_mutex_t lock;
+    char univers[512];
 
 } dmx_t;
 
@@ -148,7 +157,7 @@ int dmx_interface_send(dmx_t *iface, char *univers, size_t length) {
     if(ftdi_write_data(iface->kntxt, buffer, datalen) != datalen)
         return dmx_ftdi_error(iface);
 
-    usleep(25000);
+    usleep(20000);
 
     free(buffer);
 
@@ -162,6 +171,73 @@ int dmx_interface_close(dmx_t *iface) {
     return 0;
 }
 
+void dmx_set(char *univers, int channel, int value) {
+    univers[channel - 1] = value;
+}
+
+void *dmx_interface_worker(void *_dmx) {
+    dmx_t *dmx = (dmx_t *) _dmx;
+    char univers[512];
+
+    while(1) {
+        // copy a local version of univers, so we lock the univers
+        // only the shortest time possible
+        pthread_mutex_lock(&dmx->lock);
+        memcpy(univers, dmx->univers, sizeof(univers));
+        pthread_mutex_unlock(&dmx->lock);
+
+        // we apply univers value, we can take our time now
+        dmx_interface_send(dmx, univers, sizeof(univers));
+    }
+}
+
+int dmx_interface_start(dmx_t *dmx) {
+    if(pthread_mutex_init(&dmx->lock, NULL))
+        diep("pthread: mutex: init");
+
+    if(pthread_create(&dmx->worker, NULL, dmx_interface_worker, dmx))
+        diep("pthread: create");
+
+    return 0;
+}
+
+int network_handler(dmx_t *dmx) {
+	struct sockaddr_un addr;
+	struct sockaddr_un from;
+	socklen_t fromlen = sizeof(from);
+	char buff[8192];
+    int fd;
+	int len;
+
+    if((fd = socket(PF_UNIX, SOCK_DGRAM, 0)) < 0)
+        diep("socket");
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+
+    strcpy(addr.sun_path, DMX_UNIX_SOCKET);
+    unlink(DMX_UNIX_SOCKET);
+
+    if(bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+        diep("bind");
+
+    printf("[+] network: waiting frames\n");
+
+	while((len = recvfrom(fd, buff, 8192, 0, (struct sockaddr *) &from, &fromlen)) > 0) {
+		printf("[+] network: received frame length: %u\n", len);
+
+        if(len == 512) {
+            pthread_mutex_lock(&dmx->lock);
+            memcpy(dmx->univers, buff, 512);
+            pthread_mutex_unlock(&dmx->lock);
+        }
+	}
+
+    close(fd);
+
+    return 0;
+}
+
 int main() {
     dmx_t *dmx = dmx_open();
 
@@ -171,17 +247,13 @@ int main() {
     if(dmx_interface_setup(dmx))
         return 1;
 
-    // example: stobbe channel [1] 0 -> 25
-    char hello[512];
-    memset(hello, 0, sizeof(hello));
+    // start dmx worker
+    dmx_interface_start(dmx);
 
-    while(1) {
-        hello[0] = (hello[0] == 0) ? 25 : 0;
+    // waiting for network event
+    network_handler(dmx);
 
-        dmx_interface_send(dmx, hello, sizeof(hello));
-
-        // break; // to exit loop and test closing handler
-    }
+    // pthread_mutex_destroy(&lock);
 
     if(dmx_interface_close(dmx))
         return 1;
