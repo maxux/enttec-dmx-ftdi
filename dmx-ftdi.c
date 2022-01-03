@@ -231,7 +231,7 @@ int network_handler(dmx_t *dmx) {
             memcpy(dmx->univers, buff, 512);
             pthread_mutex_unlock(&dmx->lock);
         }
-	}
+    }
 
     close(fd);
 
