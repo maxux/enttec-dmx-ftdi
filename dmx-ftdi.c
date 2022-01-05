@@ -136,11 +136,14 @@ int dmx_interface_send(dmx_t *iface, char *univers, size_t length) {
     unsigned char *buffer = malloc(length + 8);
     ssize_t datalen = length + 6;
 
+    #if 0
+    // not needed for Pro version
     if(ftdi_set_line_property2(iface->kntxt, iface->bits, iface->stop, iface->parity, BREAK_ON) < 0)
         return dmx_ftdi_error(iface);
 
     if(ftdi_set_line_property2(iface->kntxt, iface->bits, iface->stop, iface->parity, BREAK_OFF) < 0)
         return dmx_ftdi_error(iface);
+    #endif
 
     buffer[0] = ENTTEC_PRO_START_OF_MSG;
     buffer[1] = ENTTEC_PRO_SEND_DMX_RQ;
@@ -157,7 +160,8 @@ int dmx_interface_send(dmx_t *iface, char *univers, size_t length) {
     if(ftdi_write_data(iface->kntxt, buffer, datalen) != datalen)
         return dmx_ftdi_error(iface);
 
-    usleep(20000);
+    // not needed without break switch
+    // usleep(20000);
 
     free(buffer);
 
