@@ -160,8 +160,8 @@ int dmx_interface_send(dmx_t *iface, char *univers, size_t length) {
     if(ftdi_write_data(iface->kntxt, buffer, datalen) != datalen)
         return dmx_ftdi_error(iface);
 
-    // not needed without break switch
-    // usleep(20000);
+    // take some rest, this make signal more smooth
+    usleep(20000);
 
     free(buffer);
 
