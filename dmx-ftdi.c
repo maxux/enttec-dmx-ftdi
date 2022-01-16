@@ -68,7 +68,7 @@ int dmx_interface_lookup(dmx_t *iface) {
     struct ftdi_device_list *devlist = NULL;
     struct ftdi_device_list *dev;
 
-	if(ftdi_usb_find_all(iface->kntxt, &devlist, USB_VENDOR_ID, USB_PRODUCT_ID) < 0)
+    if(ftdi_usb_find_all(iface->kntxt, &devlist, USB_VENDOR_ID, USB_PRODUCT_ID) < 0)
         return dmx_ftdi_error(iface);
 
     // using a loop but using the first one only anyway
@@ -206,14 +206,14 @@ int dmx_interface_start(dmx_t *dmx) {
 }
 
 int network_handler(dmx_t *dmx) {
-	struct sockaddr_un addr;
-	struct sockaddr_un from;
-	socklen_t fromlen = sizeof(from);
-	char buff[8192];
-    int fd;
-	int len;
+    struct sockaddr_un addr;
+    struct sockaddr_un from;
+    socklen_t fromlen = sizeof(from);
+    char buff[1024];
+    int sockfd, fd;
+    int len;
 
-    if((fd = socket(PF_UNIX, SOCK_DGRAM, 0)) < 0)
+    if((sockfd = socket(PF_UNIX, SOCK_STREAM, 0)) < 0)
         diep("socket");
 
     memset(&addr, 0, sizeof(addr));
@@ -222,13 +222,35 @@ int network_handler(dmx_t *dmx) {
     strcpy(addr.sun_path, DMX_UNIX_SOCKET);
     unlink(DMX_UNIX_SOCKET);
 
-    if(bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    if(bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
         diep("bind");
 
     printf("[+] network: waiting frames\n");
 
-	while((len = recvfrom(fd, buff, 8192, 0, (struct sockaddr *) &from, &fromlen)) > 0) {
-		printf("[+] network: received frame length: %u\n", len);
+    if(listen(sockfd, 32) < 0)
+        diep("listen");
+
+    while(1) {
+        if((fd = accept(sockfd, (struct sockaddr *) &from, &fromlen)) < 0) {
+            diep("accept");
+        }
+
+        if((len = read(fd, buff, sizeof(buff))) < 0) {
+            diep("read");
+        }
+
+        printf("[+] network: received frame length: %u\n", len);
+
+        if(len == 1) {
+            printf("[+] requesting current state\n");
+            pthread_mutex_lock(&dmx->lock);
+            memcpy(buff, dmx->univers, 512);
+            pthread_mutex_unlock(&dmx->lock);
+
+            if((len = write(fd, buff, 512)) != 512) {
+                diep("write");
+            }
+        }
 
         if(len == 512) {
             pthread_mutex_lock(&dmx->lock);
