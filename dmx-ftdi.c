@@ -191,8 +191,11 @@ void *dmx_interface_worker(void *_dmx) {
         pthread_mutex_unlock(&dmx->lock);
 
         // we apply univers value, we can take our time now
-        dmx_interface_send(dmx, univers, sizeof(univers));
+        if(dmx_interface_send(dmx, univers, sizeof(univers)) != 0)
+            return _dmx;
     }
+
+    return NULL;
 }
 
 int dmx_interface_start(dmx_t *dmx) {
@@ -257,9 +260,11 @@ int network_handler(dmx_t *dmx) {
             memcpy(dmx->univers, buff, 512);
             pthread_mutex_unlock(&dmx->lock);
         }
+
+        close(fd);
     }
 
-    close(fd);
+    close(sockfd);
 
     return 0;
 }
